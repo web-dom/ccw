@@ -41,7 +41,19 @@ int write_file(char *fileName, void *contents, size_t len) {
 
 /*-------------------------------------------*/
 
+void assert(int cond, char *msg) {
+  if (cond == 0) {
+    console_log(msg);
+    exit(0);
+  }
+}
+
 /* Constants */
+const int SUCCESS = 1;
+const int FAIL = 0;
+
+const int TRUE = 1;
+const int FALSE = 0;
 
 const int I32 = 127;
 const int I64 = 126;
@@ -244,10 +256,13 @@ const int IMMUTABLE = 0;
 const int MUTABLE = 1;
 const int EMPTY_VEC = 0;
 
-/* Utils */
+const int TOKEN_TYPE_TEXT = 0;
+const int TOKEN_TYPE_SYMBOL = 1;
+const int TOKEN_TYPE_NUMBER = 2;
 
+/* Utils */
 struct WasmNode {
-  int data;
+  void *data;
   struct WasmNode *next;
 };
 
@@ -266,13 +281,65 @@ size_t WasmNode_length(struct WasmNode *n) {
   return i;
 }
 
+/* Utility functions for creating the bytes of web assembly */
+
 struct WasmNode *w(int w, struct WasmNode *next) {
   struct WasmNode *n;
 
   n = WasmNode_new();
-  n->data = w;
+  n->data = (void *)(long)w;
   n->next = next;
   return n;
+}
+
+void wjoin(struct WasmNode *self, struct WasmNode *other) {
+  struct WasmNode *wasm;
+  struct WasmNode *n;
+
+  n = self;
+  while (n->next != NULL) {
+    n = n->next;
+  }
+  n->next = other;
+}
+
+struct WasmNode *wbytevec(struct WasmNode *data) {
+  if (data == NULL) {
+    return w(0, NULL);
+  }
+  return w((int)WasmNode_length(data), data);
+}
+
+struct WasmNode *wstring(char *s, struct WasmNode *next) {
+  struct WasmNode *head;
+  struct WasmNode *node;
+  struct WasmNode *tmp;
+  char n;
+  node = NULL;
+  n = 0;
+  while (s[n] != 0) {
+    tmp = w(s[n], NULL);
+    /* first time lets save head */
+    if (node == NULL) {
+      node = tmp;
+      head = node;
+      n += 1;
+      continue;
+    }
+    node->next = tmp;
+    node = tmp;
+    n += 1;
+  }
+  if (node == NULL) {
+    return w(0, NULL);
+  }
+  head = wbytevec(head);
+  node->next = next;
+  return head;
+}
+
+struct WasmNode *wsection(int section, struct WasmNode *data) {
+  return w(section, wbytevec(data));
 }
 
 struct WasmNode *magic_number() {
@@ -283,6 +350,8 @@ struct WasmNode *version_1() {
   return w(1, w(0, w(0, w(0, NULL))));
 }
 
+/* WasmApp - A structure representing a web assembly module */
+
 struct WasmApp {
   void *types;
 };
@@ -291,16 +360,25 @@ struct WasmApp *WasmApp_new() {
   return (struct WasmApp *)malloc(sizeof(struct WasmApp));
 }
 
-char *WasmApp_write(struct WasmApp *self, char *file_name) {
+int WasmApp_write(struct WasmApp *self, char *file_name) {
   struct WasmNode *wasm;
   size_t i;
   struct WasmNode *n;
   int result;
   int len;
   char *bytes;
+  struct WasmNode *main_signature;
 
   /* build binary */
   wasm = magic_number();
+  wjoin(wasm, version_1());
+  wjoin(wasm, wsection(SECTION_TYPE, w(1, w(FUNC, w(0, w(1, w(I32, NULL)))))));
+  wjoin(wasm, wsection(SECTION_FUNCTION, w(1, w(0, NULL))));
+  wjoin(wasm, wsection(SECTION_EXPORT,
+                       w(1, wstring("main", w(DESC_FUNCTION, w(0, NULL))))));
+  wjoin(wasm,
+        wsection(SECTION_CODE,
+                 w(1, wbytevec(w(0, w(I32_CONST, w(42, w(END, NULL))))))));
 
   /* Write out wasm to bytes */
   len = WasmNode_length(wasm);
@@ -308,7 +386,7 @@ char *WasmApp_write(struct WasmApp *self, char *file_name) {
   i = 0;
   n = wasm;
   while (n != NULL) {
-    bytes[i] = n->data;
+    bytes[i] = (int)(long)n->data;
     n = n->next;
     i += 1;
   }
@@ -316,31 +394,155 @@ char *WasmApp_write(struct WasmApp *self, char *file_name) {
   if (result == 0) {
     console_log("could not write wasm file");
   }
+  return SUCCESS;
+}
+
+struct TokenText {
+  char *text;
+};
+
+struct TokenText *TokenText_new(char *text) {
+  struct TokenText *t = (struct TokenText *)malloc(sizeof(struct TokenText));
+  t->text = text;
+  return t;
+}
+
+struct Token {
+  int token_type;
+  void *data;
+  struct Token *next;
+};
+
+struct Token *Token_new(int token_type, void *data, struct Token *next) {
+  struct Token *t = (struct Token *)malloc(sizeof(struct Token));
+  t->token_type = token_type;
+  t->data = data;
+  t->next = next;
+  return t;
+}
+
+Token_print(struct Token *self) {
+  if (self == NULL) {
+    return;
+  }
+  if (self->token_type == TOKEN_TYPE_TEXT) {
+    struct TokenText *t = (struct TokenText *)self->data;
+    console_log(t->text);
+    console_log(", ");
+    Token_print(self->next);
+  }
+}
+
+struct Token *tokenize(char *bytes) {
+  return Token_new(TOKEN_TYPE_TEXT, TokenText_new("hello"),
+                   Token_new(TOKEN_TYPE_TEXT, TokenText_new("goodbye"), NULL));
 }
 
 struct WasmApp *compile(char *input) {
-  struct WasmApp *app = WasmApp_new();
-  char *c;
+  struct WasmApp *app;
+  char *input_bytes;
+  struct Token *tokens;
 
-  c = read_file(input);
-  if (c == NULL) {
+  app = WasmApp_new();
+
+  input_bytes = read_file(input);
+  if (input_bytes == NULL) {
     console_log("could not open file");
+    return NULL;
   }
+
+  tokens = tokenize(input_bytes);
+  if (tokens == NULL) {
+    console_log("file is empty");
+    return NULL;
+  }
+  Token_print(tokens);
   return app;
+}
+
+void WasmNode_print(struct WasmNode *self) {
+  if (self == NULL) {
+    return;
+  }
+  printf("%d", self->data);
+  console_log(", ");
+  WasmNode_print(self->next);
+}
+
+int WasmNode_equal(struct WasmNode *a, struct WasmNode *b) {
+  struct WasmNode *x;
+  struct WasmNode *n;
+  if (a == NULL && b == NULL) {
+    return TRUE;
+  } else if (a != NULL && b != NULL) {
+    if (WasmNode_length(a) != WasmNode_length(b)) {
+      return FALSE;
+    }
+    x = a;
+    n = b;
+    while (x != NULL) {
+      if (x->data != n->data) {
+        return FALSE;
+      }
+      x = x->next;
+      n = n->next;
+    }
+    return TRUE;
+  }
+  return FALSE;
+}
+
+void unit_tests() {
+  struct WasmNode *x;
+  struct WasmNode *n;
+  assert(FALSE == WasmNode_equal(NULL, w(1, NULL)),
+         "null should not equal a list");
+  assert(TRUE == WasmNode_equal(NULL, NULL), "null should equal true");
+  assert(TRUE == WasmNode_equal(w(1, NULL), w(1, NULL)),
+         "similar one element lists should equal");
+  assert(FALSE == WasmNode_equal(w(2, NULL), w(1, NULL)),
+         "dissimilar one element lists should not equal");
+  assert(FALSE == WasmNode_equal(w(1, w(2, NULL)), w(1, NULL)),
+         "dissimilar length lists should not equal");
+  assert(FALSE == WasmNode_equal(w(1, w(2, NULL)), w(1, w(3, NULL))),
+         "dissimilar multi element lists should not equal");
+  assert(TRUE == WasmNode_equal(w(1, w(3, NULL)), w(1, w(3, NULL))),
+         "similar multi element lists should equal");
+  assert(TRUE == WasmNode_equal(w(0, NULL), wstring("", NULL)),
+         "empty string should be null");
+  assert(TRUE == WasmNode_equal(w(1, w(97, NULL)), wstring("a", NULL)),
+         "'a' should be a list");
+  assert(TRUE == WasmNode_equal(w(2, w(97, w(97, NULL))), wstring("aa", NULL)),
+         "'aa' should be a list");
+  assert(TRUE == WasmNode_equal(w(2, w(97, w(97, w(1, NULL)))),
+                                wstring("aa", w(1, NULL))),
+         "'aa' should be a list extended by 1");
 }
 
 int main(int argc, char *argv[]) {
   char *output;
   char *input;
   struct WasmApp *app;
+  int result;
 
+  unit_tests();
+  /* get args */
   if (argc != 4) {
     console_log("need file: ccw -o <file.wasm> <file.c>");
     return 1;
   }
   output = argv[2];
   input = argv[3];
+
+  /* compile and write to file */
   app = compile(input);
-  WasmApp_write(app, output);
+  if (app == NULL) {
+    return 1;
+  }
+  result = WasmApp_write(app, output);
+  if (result = FAIL) {
+    return 1;
+  }
+
   return (0);
 }
