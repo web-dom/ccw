@@ -281,6 +281,38 @@ size_t WasmNode_length(struct WasmNode *n) {
   return i;
 }
 
+int WasmNode_equal(struct WasmNode *a, struct WasmNode *b) {
+  struct WasmNode *x;
+  struct WasmNode *n;
+  if (a == NULL && b == NULL) {
+    return TRUE;
+  } else if (a != NULL && b != NULL) {
+    if (WasmNode_length(a) != WasmNode_length(b)) {
+      return FALSE;
+    }
+    x = a;
+    n = b;
+    while (x != NULL) {
+      if (x->data != n->data) {
+        return FALSE;
+      }
+      x = x->next;
+      n = n->next;
+    }
+    return TRUE;
+  }
+  return FALSE;
+}
+
+void WasmNode_print(struct WasmNode *self) {
+  if (self == NULL) {
+    return;
+  }
+  printf("%d", self->data);
+  console_log(", ");
+  WasmNode_print(self->next);
+}
+
 /* Utility functions for creating the bytes of web assembly */
 
 struct WasmNode *w(int w, struct WasmNode *next) {
@@ -350,6 +382,47 @@ struct WasmNode *version_1() {
   return w(1, w(0, w(0, w(0, NULL))));
 }
 
+struct TokenText {
+  char *text;
+};
+
+struct TokenText *TokenText_new(char *text) {
+  struct TokenText *t = (struct TokenText *)malloc(sizeof(struct TokenText));
+  t->text = text;
+  return t;
+}
+
+struct Token {
+  int token_type;
+  void *data;
+  struct Token *next;
+};
+
+struct Token *Token_new(int token_type, void *data, struct Token *next) {
+  struct Token *t = (struct Token *)malloc(sizeof(struct Token));
+  t->token_type = token_type;
+  t->data = data;
+  t->next = next;
+  return t;
+}
+
+Token_print(struct Token *self) {
+  if (self == NULL) {
+    return;
+  }
+  if (self->token_type == TOKEN_TYPE_TEXT) {
+    struct TokenText *t = (struct TokenText *)self->data;
+    console_log(t->text);
+    console_log(", ");
+    Token_print(self->next);
+  }
+}
+
+struct Token *tokenize(char *bytes) {
+  return Token_new(TOKEN_TYPE_TEXT, TokenText_new("hello"),
+                   Token_new(TOKEN_TYPE_TEXT, TokenText_new("goodbye"), NULL));
+}
+
 /* WasmApp - A structure representing a web assembly module */
 
 struct WasmApp {
@@ -397,47 +470,6 @@ int WasmApp_write(struct WasmApp *self, char *file_name) {
   return SUCCESS;
 }
 
-struct TokenText {
-  char *text;
-};
-
-struct TokenText *TokenText_new(char *text) {
-  struct TokenText *t = (struct TokenText *)malloc(sizeof(struct TokenText));
-  t->text = text;
-  return t;
-}
-
-struct Token {
-  int token_type;
-  void *data;
-  struct Token *next;
-};
-
-struct Token *Token_new(int token_type, void *data, struct Token *next) {
-  struct Token *t = (struct Token *)malloc(sizeof(struct Token));
-  t->token_type = token_type;
-  t->data = data;
-  t->next = next;
-  return t;
-}
-
-Token_print(struct Token *self) {
-  if (self == NULL) {
-    return;
-  }
-  if (self->token_type == TOKEN_TYPE_TEXT) {
-    struct TokenText *t = (struct TokenText *)self->data;
-    console_log(t->text);
-    console_log(", ");
-    Token_print(self->next);
-  }
-}
-
-struct Token *tokenize(char *bytes) {
-  return Token_new(TOKEN_TYPE_TEXT, TokenText_new("hello"),
-                   Token_new(TOKEN_TYPE_TEXT, TokenText_new("goodbye"), NULL));
-}
-
 struct WasmApp *compile(char *input) {
   struct WasmApp *app;
   char *input_bytes;
@@ -458,38 +490,6 @@ struct WasmApp *compile(char *input) {
   }
   Token_print(tokens);
   return app;
-}
-
-void WasmNode_print(struct WasmNode *self) {
-  if (self == NULL) {
-    return;
-  }
-  printf("%d", self->data);
-  console_log(", ");
-  WasmNode_print(self->next);
-}
-
-int WasmNode_equal(struct WasmNode *a, struct WasmNode *b) {
-  struct WasmNode *x;
-  struct WasmNode *n;
-  if (a == NULL && b == NULL) {
-    return TRUE;
-  } else if (a != NULL && b != NULL) {
-    if (WasmNode_length(a) != WasmNode_length(b)) {
-      return FALSE;
-    }
-    x = a;
-    n = b;
-    while (x != NULL) {
-      if (x->data != n->data) {
-        return FALSE;
-      }
-      x = x->next;
-      n = n->next;
-    }
-    return TRUE;
-  }
-  return FALSE;
 }
 
 void unit_tests() {
