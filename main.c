@@ -1,52 +1,6 @@
 /* Copyright @ 2019 Richard Anaya. All rights reserved. */
 
-/* STANDARD LIBRARY SPECIFIC CODE */
-/* THESE FUNCTIONS ARE THE ONLY ENTRY POINTS */
-#include <stdio.h>
-#include <stdlib.h>
-
-void console_log(char *text) { printf(text); }
-
-char *read_file(char *fileName) {
-  FILE *file = fopen(fileName, "r");
-  char *code;
-  size_t n = 0;
-  int c;
-
-  if (file == NULL) {
-    return (NULL);
-  }
-  code = malloc(10000);
-
-  while ((c = fgetc(file)) != EOF) {
-    code[n++] = (char)c;
-  }
-
-  code[n] = '\0';
-
-  return (code);
-}
-
-int write_file(char *fileName, void *contents, size_t len) {
-  FILE *file = fopen(fileName, "w");
-
-  if (file == NULL) {
-    return (0);
-  }
-  fwrite(contents, len, 1, file);
-  fclose(file);
-
-  return (1);
-}
-
-/*-------------------------------------------*/
-
-void assert(int cond, char *msg) {
-  if (cond == 0) {
-    console_log(msg);
-    exit(0);
-  }
-}
+#include "system.h"
 
 /* Constants */
 const int SUCCESS = 1;
@@ -308,7 +262,7 @@ void WasmNode_print(struct WasmNode *self) {
   if (self == NULL) {
     return;
   }
-  printf("%d", self->data);
+  /* printf("%d", self->data);*/
   console_log(", ");
   WasmNode_print(self->next);
 }
