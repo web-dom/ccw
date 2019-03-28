@@ -1,5 +1,11 @@
 #include "system.h"
 
+const int SUCCESS = 1;
+const int FAIL = 0;
+
+const int TRUE = 1;
+const int FALSE = 0;
+
 #ifdef WASM
 void stop_wasm_somehow(int code) {}
 
@@ -18,6 +24,7 @@ void assert(int cond, char *msg) {
     stop_wasm_somehow(0);
   }
 }
+
 #else
 void console_log(char *text) { printf(text); }
 

@@ -3,11 +3,6 @@
 #include "system.h"
 
 /* Constants */
-const int SUCCESS = 1;
-const int FAIL = 0;
-
-const int TRUE = 1;
-const int FALSE = 0;
 
 const int I32 = 127;
 const int I64 = 126;
@@ -431,7 +426,7 @@ struct WasmApp *compile(char *input) {
 
   app = WasmApp_new();
 
-  input_bytes = read_file(input);
+  input_bytes = (char *)read_file(input);
   if (input_bytes == NULL) {
     console_log("could not open file");
     return NULL;
